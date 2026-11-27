@@ -982,11 +982,11 @@ class RoomMindCoordinator(DataUpdateCoordinator):
             if state.state == "dry" and self._ac_dry.is_running(eid):
                 # RoomMind's dry runs to its stop point: the remote moves how far it dries, not the room band
                 continue
-            offset = get_setpoint_offset(devices, eid) if full_control else 0.0
             for attr, (before, after) in changes.items():
                 side = _setpoint_side(attr, state, device.get("type", ""), climate_mode)
                 if side is None:
                     continue
+                offset = get_setpoint_offset(devices, eid, side) if full_control else 0.0
                 size = abs(after - before)
                 if size > chosen.get(side, (0.0, 0.0))[0]:
                     chosen[side] = (size, ha_temp_to_celsius(self.hass, after) - offset)
@@ -2277,7 +2277,15 @@ class RoomMindCoordinator(DataUpdateCoordinator):
         if mode == MODE_HEATING and ac_heating_excluded(room):
             _mode_relevant_eids -= set(get_ac_eids(_room_devices))
         _all_direct = bool(_mode_relevant_eids) and _mode_relevant_eids <= _direct_eids
-        _direct_offsets = get_setpoint_offsets(_room_devices) if has_external_sensor else {}
+        if mode == MODE_COOLING:
+            _offset_mode = "cool"
+        elif mode == MODE_HEATING:
+            _offset_mode = "heat"
+        elif room.get("climate_mode") == CLIMATE_MODE_COOL_ONLY or (targets.heat is None and targets.cool is not None):
+            _offset_mode = "cool"
+        else:
+            _offset_mode = "heat"
+        _direct_offsets = get_setpoint_offsets(_room_devices, _offset_mode) if has_external_sensor else {}
         # One shown value only when every driven device agrees on the offset
         _relevant_offsets = {_direct_offsets.get(eid, 0.0) for eid in _mode_relevant_eids}
         _display_offset = _relevant_offsets.pop() if _all_direct and len(_relevant_offsets) == 1 else 0.0

@@ -527,7 +527,7 @@ async def test_setpoint_follows_a_moved_stop_point(now):
 @pytest.mark.asyncio
 async def test_direct_unit_gets_its_offset_on_the_setpoint(now):
     hass, _, calls = _hass()
-    room = _room(setpoint_mode="direct", setpoint_offset=-1.0)
+    room = _room(setpoint_mode="direct", setpoint_offset_heat=3.0, setpoint_offset_cool=-1.0)
     await _process(AcDryManager(hass), room=room)
     assert ("set_temperature", {"temperature": 20.5}) in calls
 

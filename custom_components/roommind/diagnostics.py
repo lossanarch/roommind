@@ -66,7 +66,10 @@ def _build_device_states(hass: HomeAssistant, devices: list[dict]) -> list[dict[
             "idle_fan_mode": dev.get("idle_fan_mode", ""),
             "setback_auto_off": dev.get("setback_auto_off", False),
             "setpoint_mode": dev.get("setpoint_mode", "proportional"),
-            "setpoint_offset": dev.get("setpoint_offset", 0.0),
+            "setpoint_offset_heat": dev.get("setpoint_offset_heat", dev.get("setpoint_offset", 0.0)),
+            "setpoint_offset_cool": dev.get(
+                "setpoint_offset_cool", 0.0 if dev.get("type") == "trv" else dev.get("setpoint_offset", 0.0)
+            ),
             "coil_dry": dev.get("coil_dry", "inherit"),
             "coil_dry_minutes": dev.get("coil_dry_minutes", 0),
             "coil_dry_mode": dev.get("coil_dry_mode", ""),

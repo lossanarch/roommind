@@ -302,13 +302,19 @@ def _is_direct(device: dict) -> bool:
     )
 
 
-def get_setpoint_offset(devices: list[dict], entity_id: str) -> float:
-    """Return the direct-mode setpoint offset (°C) of a device, 0.0 if unset, invalid or not direct."""
+def get_setpoint_offset(devices: list[dict], entity_id: str, mode: str = "heat") -> float:
+    """Return the direct-mode setpoint offset (°C) of a device for *mode* ("heat" or "cool").
+
+    Falls back to the legacy single ``setpoint_offset`` field when the
+    mode-specific key is absent. Returns 0.0 if unset, invalid or not direct.
+    """
     dev = get_device_by_eid(devices, entity_id)
     if dev is None or not _is_direct(dev):
         return 0.0
+    key = f"setpoint_offset_{mode}"
+    raw = dev[key] if key in dev and dev[key] is not None else dev.get("setpoint_offset")
     try:
-        offset = float(dev.get("setpoint_offset") or 0.0)
+        offset = float(raw or 0.0)
     except (TypeError, ValueError):
         return 0.0
     if offset != offset:  # NaN
@@ -316,9 +322,11 @@ def get_setpoint_offset(devices: list[dict], entity_id: str) -> float:
     return max(SETPOINT_OFFSET_MIN, min(SETPOINT_OFFSET_MAX, offset))
 
 
-def get_setpoint_offsets(devices: list[dict]) -> dict[str, float]:
-    """Return {entity_id: offset} for direct-mode devices with a non-zero offset."""
-    offsets = {d["entity_id"]: get_setpoint_offset(devices, d["entity_id"]) for d in devices if d.get("entity_id")}
+def get_setpoint_offsets(devices: list[dict], mode: str = "heat") -> dict[str, float]:
+    """Return {entity_id: offset} for direct-mode devices with a non-zero offset for *mode*."""
+    offsets = {
+        d["entity_id"]: get_setpoint_offset(devices, d["entity_id"], mode) for d in devices if d.get("entity_id")
+    }
     return {eid: off for eid, off in offsets.items() if off}
 
 
@@ -375,6 +383,29 @@ def migrate_heat_pump_devices(devices: list[dict]) -> bool:
         if d.get("type") == "heat_pump":
             d["type"] = DEVICE_TYPE_AC
             migrated = True
+    return migrated
+
+
+def migrate_setpoint_offsets(devices: list[dict], climate_mode: str = "auto") -> bool:
+    """Split legacy single setpoint_offset into setpoint_offset_heat / setpoint_offset_cool.
+
+    Returns True if any device was migrated.
+    """
+    migrated = False
+    for d in devices:
+        if "setpoint_offset" not in d:
+            continue
+        raw = d.pop("setpoint_offset")
+        legacy = 0.0 if raw is None else raw
+        if "setpoint_offset_heat" not in d:
+            d["setpoint_offset_heat"] = (
+                0.0 if (d.get("type") == DEVICE_TYPE_AC and climate_mode == "cool_only") else legacy
+            )
+        if "setpoint_offset_cool" not in d:
+            d["setpoint_offset_cool"] = (
+                0.0 if (d.get("type") == DEVICE_TYPE_TRV or climate_mode == "heat_only") else legacy
+            )
+        migrated = True
     return migrated
 
 

@@ -299,3 +299,79 @@ async def test_setback_keeps_offset_with_external_sensor_via_controller():
     await ctrl.async_apply("idle", TargetTemps(heat=None, cool=24.0))
 
     assert _sent(hass) == [27.0]
+
+
+@pytest.mark.asyncio
+async def test_reverse_cycle_uses_separate_heat_and_cool_offsets():
+    """Reverse-cycle AC with +3 K heating offset and -2 K cooling offset applies each to its own mode."""
+    _last_commands.clear()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state())
+    room = _room(setpoint_offset_heat=3.0, setpoint_offset_cool=-2.0)
+    ctrl = _controller(hass, room)
+
+    await ctrl.async_apply(MODE_HEATING, TargetTemps(heat=20.0, cool=22.0), power_fraction=1.0, current_temp=18.0)
+    assert _sent(hass) == [23.0]
+
+    hass.services.async_call.reset_mock()
+    _last_commands.clear()
+    await ctrl.async_apply(MODE_COOLING, TargetTemps(heat=20.0, cool=22.0), power_fraction=1.0, current_temp=26.0)
+    assert _sent(hass) == [20.0]
+
+
+@pytest.mark.asyncio
+async def test_setback_uses_active_mode_offset():
+    """Heating setback applies setpoint_offset_heat; cooling setback applies setpoint_offset_cool."""
+    devices = [
+        {
+            "entity_id": "climate.dev",
+            "type": "ac",
+            "setpoint_mode": "direct",
+            "setpoint_offset_heat": 3.0,
+            "setpoint_offset_cool": -2.0,
+            "idle_action": "setback",
+        }
+    ]
+
+    _last_commands.clear()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state(hvac="heat", step=0.5, temperature=23.0))
+    await async_idle_device(hass, "climate.dev", devices, targets=TargetTemps(heat=20.0, cool=24.0))
+    # heat target 20 + heat offset 3 - setback 2 = 21
+    assert _sent(hass) == [21.0]
+
+    _last_commands.clear()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state(hvac="cool", step=0.5, temperature=22.0))
+    await async_idle_device(hass, "climate.dev", devices, targets=TargetTemps(heat=20.0, cool=24.0))
+    # cool target 24 + cool offset (-2) + setback 2 = 24
+    assert _sent(hass) == [24.0]
+
+
+@pytest.mark.asyncio
+async def test_hold_retarget_uses_mode_specific_offset():
+    """Compressor min-run hold retarget applies heat offset while heating and cool offset while cooling."""
+    from custom_components.roommind.control.mpc_controller import MODE_IDLE, _active_targets, clear_command_cache
+
+    clear_command_cache()
+    _last_commands.clear()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state(hvac="heat", temperature=23.0))
+    room = _room(setpoint_offset_heat=3.0, setpoint_offset_cool=-2.0)
+    ctrl = _controller(hass, room)
+    _active_targets["climate.dev"] = (20.0, 24.0)
+    await ctrl.async_apply(
+        MODE_IDLE, TargetTemps(heat=17.0, cool=24.0), current_temp=19.5, compressor_forced_on={"climate.dev"}
+    )
+    assert _sent(hass) == [20.0]
+
+    clear_command_cache()
+    _last_commands.clear()
+    hass = build_hass()
+    hass.states.get = MagicMock(return_value=_state(hvac="cool", temperature=22.0))
+    ctrl = _controller(hass, room)
+    _active_targets["climate.dev"] = (20.0, 24.0)
+    await ctrl.async_apply(
+        MODE_IDLE, TargetTemps(heat=20.0, cool=27.0), current_temp=24.5, compressor_forced_on={"climate.dev"}
+    )
+    assert _sent(hass) == [25.0]

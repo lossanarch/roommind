@@ -5,7 +5,12 @@ import { getEntitiesForArea } from "../utils/room-state";
 import { localize } from "../utils/localize";
 import { getSelectValue, openEntityInfo } from "../utils/events";
 import { tempUnit, toDisplayDelta } from "../utils/temperature";
-import { fanModeLabel, resolveHeatingSystemType } from "../utils/device-utils";
+import {
+  deviceSetpointOffset,
+  deviceSetpointOffsetSides,
+  fanModeLabel,
+  resolveHeatingSystemType,
+} from "../utils/device-utils";
 import { formatMinutes, formatNumber } from "../utils/format";
 import { tokens } from "../styles/tokens";
 import { inputStyles } from "../styles/input-styles";
@@ -616,6 +621,11 @@ export class RsDeviceSection extends LitElement {
   private _renderControlGroup(device: DeviceConfig) {
     const l = this.hass.language;
     const id = device.entity_id;
+    const sides =
+      device.setpoint_mode === "direct"
+        ? deviceSetpointOffsetSides(device, this.hass)
+        : { heat: false, cool: false };
+    const split = sides.heat && sides.cool;
     return html`<div class="group">
       <h4 class="group-title">
         ${localize("devices.setpoint_mode", l)}
@@ -631,17 +641,32 @@ export class RsDeviceSection extends LitElement {
         (v) => this._onSetpointModeChange(id, v),
       )}
       ${
-        device.setpoint_mode === "direct"
+        sides.heat
           ? html`<rs-number-field
               .hass=${this.hass}
               kind="temperature-delta"
-              .label=${localize("devices.setpoint_offset", l)}
-              .info=${localize("devices.setpoint_offset_info", l)}
-              .value=${device.setpoint_offset ?? 0}
+              .label=${localize(split ? "devices.setpoint_offset_heat" : "devices.setpoint_offset", l)}
+              .info=${localize(split ? "devices.setpoint_offset_heat_info" : "devices.setpoint_offset_info", l)}
+              .value=${deviceSetpointOffset(device, "heat")}
               .min=${-10}
               .max=${10}
               @value-changed=${(e: CustomEvent<{ value: number }>) =>
-                this._onSetpointOffsetChange(id, e.detail.value)}
+                this._onSetpointOffsetChange(id, "heat", e.detail.value)}
+            ></rs-number-field>`
+          : nothing
+      }
+      ${
+        sides.cool
+          ? html`<rs-number-field
+              .hass=${this.hass}
+              kind="temperature-delta"
+              .label=${localize(split ? "devices.setpoint_offset_cool" : "devices.setpoint_offset", l)}
+              .info=${localize(split ? "devices.setpoint_offset_cool_info" : "devices.setpoint_offset_info", l)}
+              .value=${deviceSetpointOffset(device, "cool")}
+              .min=${-10}
+              .max=${10}
+              @value-changed=${(e: CustomEvent<{ value: number }>) =>
+                this._onSetpointOffsetChange(id, "cool", e.detail.value)}
             ></rs-number-field>`
           : nothing
       }
@@ -1071,6 +1096,9 @@ export class RsDeviceSection extends LitElement {
       if (deviceType === "trv" && updated.coil_dry === "on") {
         updated.coil_dry = "inherit";
       }
+      if (deviceType === "trv") {
+        updated.setpoint_offset_cool = 0;
+      }
       // Direct valve control is TRV-only; the backend schema rejects it for ACs.
       if (deviceType === "ac") {
         delete updated.valve_opening_entity;
@@ -1129,10 +1157,21 @@ export class RsDeviceSection extends LitElement {
     this._fireDeviceChanged(newDevices);
   }
 
-  private _onSetpointOffsetChange(entityId: string, value: number): void {
+  private _onSetpointOffsetChange(entityId: string, side: "heat" | "cool", value: number): void {
     const celsius = Math.max(-10, Math.min(10, Math.round(value * 100) / 100));
+    const key = side === "heat" ? "setpoint_offset_heat" : "setpoint_offset_cool";
     this._fireDeviceChanged(
-      this.devices.map((d) => (d.entity_id === entityId ? { ...d, setpoint_offset: celsius } : d)),
+      this.devices.map((d) => {
+        if (d.entity_id !== entityId) return d;
+        const updated: DeviceConfig = {
+          ...d,
+          setpoint_offset_heat: deviceSetpointOffset(d, "heat"),
+          setpoint_offset_cool: deviceSetpointOffset(d, "cool"),
+          [key]: celsius,
+        };
+        delete updated.setpoint_offset;
+        return updated;
+      }),
     );
   }
 

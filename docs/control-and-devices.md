@@ -86,16 +86,16 @@ An AC in `Direct` mode decides itself when its compressor runs. Once a run has s
 
 #### Setpoint offset
 
-Some devices measure the room differently than your room sensor, for example an AC mounted near the floor that cools its own sensor. With `Direct` and an external room sensor you can set a `Setpoint offset` (-10 to +10 °C, step 0.5, default 0). It is added to the room target before the target is sent to the device, for heating and cooling alike.
+Some devices measure the room differently than your room sensor, for example a reverse-cycle AC whose indoor sensor reads warmer while heating and colder while cooling. With `Direct` and an external room sensor you can set a `Setpoint offset` (-10 to +10 °C, step 0.5, default 0) — separately for **heating** and **cooling** on devices that support both modes. The active mode's offset is added to the room target before it is sent to the device (AC `dry` mode uses the cooling offset).
 
 - Device reads **colder** than the room: use a **negative** value.
 - Device reads **warmer** than the room: use a **positive** value.
 
-Example: the room target is 24°C. While cooling, the device thinks the room is 2° colder than it is and switches off too early. Set the offset to `-2`: the device receives 22°C and keeps running until the room is really at 24°C.
+Example: a reverse-cycle AC stops heating at 17°C when set to 20°C (reads 3° warmer), and stops cooling at 22°C when set to 20°C (reads 2° colder). Set the heating offset to `+3` (device receives 23°C when heating to 20°C) and the cooling offset to `-2` (device receives 18°C when cooling to 20°C).
 
 A TRV that measures on its body, next to the radiator, can read several degrees above the room once the radiator is hot and close on its own before the room is warm. A larger positive offset keeps its valve open, so the room sensor decides when to stop.
 
-On an AC with the `Setback` idle action the idle setpoint is the target + offset - 2 °C while heating (target + offset + 2 °C while cooling), so a large offset keeps the AC working while idle: offset +10 and target 21 °C give 29 °C. With large offsets use `Turn off` as the idle action. TRVs only offer `Turn off` and `Low setpoint`, which do not use the offset.
+On an AC with the `Setback` idle action the idle setpoint is the target + heating offset - 2 °C while heating (target + cooling offset + 2 °C while cooling), so a large offset keeps the AC working while idle: offset +10 and target 21 °C give 29 °C. With large offsets use `Turn off` as the idle action. TRVs only offer `Turn off` and `Low setpoint`, which do not use the offset.
 
 The offset is applied before the device limits (`min_temp`/`max_temp`) and the step rounding, and it is kept for the `Setback` idle action. It has no effect in `Proportional` mode. The field is only offered in rooms with an external room sensor, because Managed rooms have no reference to correct against; an old value stays ignored there. On Fahrenheit systems the field is shown in °F.
 

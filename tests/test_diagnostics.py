@@ -378,6 +378,8 @@ async def test_diagnostics_device_states_included(hass, mock_config_entry):
     assert "device_states" in result["rooms"]["room_a"]
     assert len(result["rooms"]["room_a"]["device_states"]) == 1
     assert result["rooms"]["room_a"]["device_states"][0]["ha_state"] == "heat"
+    assert result["rooms"]["room_a"]["device_states"][0]["setpoint_offset_heat"] == 0.0
+    assert result["rooms"]["room_a"]["device_states"][0]["setpoint_offset_cool"] == 0.0
 
 
 @pytest.mark.asyncio

@@ -312,6 +312,43 @@ class TestProcessRoomSnapshot:
         assert result["device_setpoint"] == pytest.approx(25.5)
 
     @pytest.mark.asyncio
+    async def test_device_setpoint_shows_split_heat_and_cool_offsets(self, hass, mock_config_entry):
+        """Direct AC with separate heat/cool offsets displays the active mode's offset."""
+        room = {
+            **SAMPLE_ROOM,
+            "area_id": "living_split_offset_xyz",
+            "thermostats": [],
+            "acs": ["climate.living_ac"],
+            "devices": [
+                {
+                    "entity_id": "climate.living_ac",
+                    "type": "ac",
+                    "role": "auto",
+                    "heating_system_type": "",
+                    "setpoint_mode": "direct",
+                    "setpoint_offset_heat": 3.0,
+                    "setpoint_offset_cool": -2.0,
+                    "idle_action": "off",
+                },
+            ],
+            "climate_mode": "auto",
+        }
+        coordinator, store = _setup_coordinator(hass, mock_config_entry, {"living_split_offset_xyz": room})
+        settings = store.get_settings()
+
+        ac_extra = {"climate.living_ac": ("off", {"hvac_modes": ["off", "heat", "cool"]})}
+        hass.states.get = MagicMock(side_effect=make_mock_states_get(temp="18.0", humidity="50.0", extra=ac_extra))
+        heating_result = await coordinator._async_process_room(room, settings, [])
+        assert heating_result["mode"] == "heating"
+        assert heating_result["device_setpoint"] == pytest.approx(heating_result["heat_target"] + 3.0)
+
+        coordinator, store = _setup_coordinator(hass, mock_config_entry, {"living_split_offset_xyz": room})
+        hass.states.get = MagicMock(side_effect=make_mock_states_get(temp="27.0", humidity="50.0", extra=ac_extra))
+        cooling_result = await coordinator._async_process_room(room, settings, [])
+        assert cooling_result["mode"] == "cooling"
+        assert cooling_result["device_setpoint"] == pytest.approx(cooling_result["cool_target"] - 2.0)
+
+    @pytest.mark.asyncio
     async def test_window_open(self, hass, mock_config_entry):
         """Window sensor on: window_open=True, mode=idle."""
         room = {
