@@ -30,6 +30,7 @@ from .utils.device_utils import (
     get_room_heating_system_type,
     legacy_to_devices,
     migrate_heat_pump_devices,
+    migrate_setpoint_offsets,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ def _migrate_room(room: dict) -> dict:
     _migrate_room_temps(room)
     _migrate_override_fields(room)
     migrate_heat_pump_devices(room.get("devices", []))
+    migrate_setpoint_offsets(room.get("devices", []), room.get("climate_mode", "auto"))
     ensure_room_has_devices(room)
     return room
 
@@ -122,6 +124,7 @@ class RoomMindStore:
         # One-time migrations (combined into single pass + single save)
         device_migrated = 0
         hp_migrated = 0
+        offset_migrated = 0
         override_migrated = 0
         for room in self._data.values():
             if "devices" not in room:
@@ -132,17 +135,21 @@ class RoomMindStore:
                 room["thermostats"] = t
                 room["acs"] = a
                 hp_migrated += 1
+            if migrate_setpoint_offsets(room.get("devices", []), room.get("climate_mode", "auto")):
+                offset_migrated += 1
             if "override_temp" in room:
                 _migrate_room_temps(room)
                 _migrate_override_fields(room)
                 override_migrated += 1
         orphan_settings_removed = [k for k in _ORPHAN_SETTINGS_KEYS if self._settings.pop(k, None) is not None]
-        if device_migrated or hp_migrated or override_migrated or orphan_settings_removed:
+        if device_migrated or hp_migrated or offset_migrated or override_migrated or orphan_settings_removed:
             await self._async_save()
         if device_migrated:
             _LOGGER.info("Migrated %d room(s) to unified device model", device_migrated)
         if hp_migrated:
             _LOGGER.info("Migrated %d room(s) from heat_pump to ac device type", hp_migrated)
+        if offset_migrated:
+            _LOGGER.info("Migrated %d room(s) to split heat/cool setpoint offsets", offset_migrated)
         if override_migrated:
             _LOGGER.info("Migrated %d room(s) to split override heat/cool", override_migrated)
         if orphan_settings_removed:

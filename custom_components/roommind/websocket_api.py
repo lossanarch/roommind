@@ -110,6 +110,20 @@ def _number_entity_or_empty(value: object) -> str:
     return value
 
 
+_SETPOINT_OFFSET_VALIDATOR = vol.All(vol.Coerce(float), vol.Range(min=SETPOINT_OFFSET_MIN, max=SETPOINT_OFFSET_MAX))
+
+
+def _normalize_device_setpoint_offsets(device: dict) -> dict:
+    """Populate split heat/cool setpoint offsets, folding any legacy single setpoint_offset."""
+    legacy = device.pop("setpoint_offset", None)
+    fallback = 0.0 if legacy is None else legacy
+    if "setpoint_offset_heat" not in device:
+        device["setpoint_offset_heat"] = fallback
+    if "setpoint_offset_cool" not in device:
+        device["setpoint_offset_cool"] = 0.0 if device.get("type") == "trv" else fallback
+    return device
+
+
 def _validate_device_valve(device: dict) -> dict:
     """Direct valve control (#413) is for TRVs; it takes effect once both degree entities are set."""
     opening, closing = device.get("valve_opening_entity"), device.get("valve_closing_entity")
@@ -548,9 +562,9 @@ async def websocket_list_rooms(
                     # No default: devices without it keep their stored form (#255)
                     vol.Optional("setback_auto_off"): bool,
                     vol.Optional("setpoint_mode", default="proportional"): vol.In(["proportional", "direct"]),
-                    vol.Optional("setpoint_offset", default=0.0): vol.All(
-                        vol.Coerce(float), vol.Range(min=SETPOINT_OFFSET_MIN, max=SETPOINT_OFFSET_MAX)
-                    ),
+                    vol.Optional("setpoint_offset"): _SETPOINT_OFFSET_VALIDATOR,
+                    vol.Optional("setpoint_offset_heat"): _SETPOINT_OFFSET_VALIDATOR,
+                    vol.Optional("setpoint_offset_cool"): _SETPOINT_OFFSET_VALIDATOR,
                     vol.Optional("coil_dry", default=COIL_DRY_INHERIT): vol.In(COIL_DRY_OVERRIDES),
                     vol.Optional("coil_dry_minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=60)),
                     vol.Optional("coil_dry_mode", default=""): vol.In(["", *COIL_DRY_MODES]),
@@ -563,6 +577,7 @@ async def websocket_list_rooms(
                 _validate_device_idle_action,
                 _validate_device_coil_dry,
                 _validate_device_valve,
+                _normalize_device_setpoint_offsets,
             )
         ],
         vol.Optional("temperature_sensor"): str,

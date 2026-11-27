@@ -233,6 +233,33 @@ async def test_direct_offset_comes_off_and_the_biggest_turn_wins(hass, mock_conf
     assert override["override_heat"] == 23.0
 
 
+@pytest.mark.asyncio
+async def test_direct_split_offsets_subtracted_per_side(hass, mock_config_entry):
+    """Adopting a setpoint from a reverse-cycle AC subtracts heat offset on heat side and cool offset on cool side."""
+    room_cfg = {
+        **FOLLOW_ROOM,
+        "thermostats": [],
+        "acs": [AC],
+        "devices": [
+            {
+                "entity_id": AC,
+                "type": "ac",
+                "setpoint_mode": "direct",
+                "setpoint_offset_heat": 3.0,
+                "setpoint_offset_cool": -2.0,
+            }
+        ],
+    }
+    coordinator, store, clock = _setup(hass, mock_config_entry, room_cfg)
+    _devices(hass, **{AC: ("heat_cool", {"target_temp_low": 23.0, "target_temp_high": 22.0})})
+    await _cycle(coordinator, clock)
+    _devices(hass, **{AC: ("heat_cool", {"target_temp_low": 24.0, "target_temp_high": 23.0})})
+    await _cycle(coordinator, clock)
+    _, override = store.async_update_room.await_args.args
+    assert override["override_heat"] == 21.0
+    assert override["override_cool"] == 25.0
+
+
 class FakeTrv:
     """A TRV that takes RoomMind's commands, so its own sends reach the tracker like on the HA bus."""
 

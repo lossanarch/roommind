@@ -330,7 +330,7 @@ class AcDryManager:
         """The stop point as setpoint, sent again only when it moves (target change)."""
         if stop_temp is None or state is None or not isinstance(state.attributes.get("temperature"), int | float):
             return
-        value = device_setpoint_ha(self.hass, state, stop_temp + get_setpoint_offset(devices, eid))
+        value = device_setpoint_ha(self.hass, state, stop_temp + get_setpoint_offset(devices, eid, "cool"))
         if st.setpoint is not None and abs(value - st.setpoint) < 0.05:
             return
         st.setpoint = value

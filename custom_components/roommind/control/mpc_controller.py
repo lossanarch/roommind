@@ -816,7 +816,7 @@ async def async_idle_device(
 
         # Direct devices keep their sensor offset (#369), but only where the active
         # path applies it too (Full Control).
-        sensor_offset = get_setpoint_offset(devices, entity_id) if use_setpoint_offset else 0.0
+        sensor_offset = get_setpoint_offset(devices, entity_id, current_hvac) if use_setpoint_offset else 0.0
         if current_hvac == "heat" and targets.heat is not None:
             setback_temp = targets.heat + sensor_offset + head_offset - DEFAULT_IDLE_SETBACK_OFFSET
         elif current_hvac == "cool" and targets.cool is not None:
@@ -1570,7 +1570,10 @@ class MPCController:
         self.acs: list[str] = get_ac_eids(room_config.get("devices", []))
         self._devices: list[dict] = room_config.get("devices", [])
         self._direct_eids: set[str] = get_direct_setpoint_eids(self._devices)
-        self._direct_offsets: dict[str, float] = get_setpoint_offsets(self._devices)
+        self._direct_offsets: dict[str, dict[str, float]] = {
+            "heat": get_setpoint_offsets(self._devices, "heat"),
+            "cool": get_setpoint_offsets(self._devices, "cool"),
+        }
         self._valve_entities: dict[str, ValveEntities] = get_valve_entities(self._devices)
         self.climate_mode: str = room_config.get("climate_mode", "auto")
         self.outdoor_temp = outdoor_temp
@@ -2833,7 +2836,7 @@ class MPCController:
                         release_setback=self._group_conflicts(eid),
                     )
                     continue
-                direct_t = self._direct_setpoint_ha(eid, direct_target)
+                direct_t = self._direct_setpoint_ha(eid, direct_target, "cool")
                 ha_t = direct_t if direct_t is not None else self._cooling_setpoint_ha(eid, ac_cool_target)
                 await self._call("set_hvac_mode", {"entity_id": eid, "hvac_mode": "cool"})
                 await self._call(
@@ -2999,7 +3002,7 @@ class MPCController:
 
     def _hold_setpoint_ha(self, eid: str, target: float, intent: str) -> float:
         """HA-unit setpoint for a held device: direct target (+offset) or the room target in the device's frame."""
-        direct = self._direct_setpoint_ha(eid, target)
+        direct = self._direct_setpoint_ha(eid, target, intent)
         return direct if direct is not None else celsius_to_ha_temp(self.hass, target + self._head_offset(eid, intent))
 
     async def _async_hold_retarget(self, eid: str, targets: TargetTemps, current_temp: float | None) -> None:
@@ -3202,7 +3205,7 @@ class MPCController:
             return min(target, self._lead_cool)
         return target
 
-    def _direct_setpoint_ha(self, eid: str, effective_target: float) -> float | None:
+    def _direct_setpoint_ha(self, eid: str, effective_target: float, intent: str) -> float | None:
         """HA-unit setpoint for a direct-mode device: room target plus its offset, None if not direct.
 
         The offset only makes sense against an external reference sensor, so
@@ -3210,7 +3213,7 @@ class MPCController:
         """
         if eid not in self._direct_eids:
             return None
-        offset = self._direct_offsets.get(eid, 0.0) if self.has_external_sensor else 0.0
+        offset = self._direct_offsets.get(intent, {}).get(eid, 0.0) if self.has_external_sensor else 0.0
         return celsius_to_ha_temp(self.hass, effective_target + offset)
 
     def _head_offset(self, eid: str, intent: str) -> float:
@@ -3249,7 +3252,7 @@ class MPCController:
         self, eid: str, proportional_celsius: float, effective_target: float, direct_target: float | None = None
     ) -> float:
         """HA-unit heating setpoint: direct target (+offset) or the capped proportional boost."""
-        direct = self._direct_setpoint_ha(eid, effective_target if direct_target is None else direct_target)
+        direct = self._direct_setpoint_ha(eid, effective_target if direct_target is None else direct_target, "heat")
         if direct is not None:
             return direct
         return self._boost_setpoint_ha(eid, proportional_celsius, effective_target)

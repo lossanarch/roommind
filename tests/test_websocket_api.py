@@ -3253,7 +3253,7 @@ async def test_coil_dry_device_schema_defaults():
 
 @pytest.mark.asyncio
 async def test_setpoint_offset_schema_default_and_range():
-    """setpoint_offset defaults to 0.0 and is limited to -10..+10 (#369)."""
+    """setpoint_offset_heat/cool default to 0.0, fold legacy setpoint_offset, and enforce -10..+10."""
     import voluptuous as vol
 
     schema = websocket_save_room._ws_schema
@@ -3261,16 +3261,41 @@ async def test_setpoint_offset_schema_default_and_range():
     def _validate(device):
         return schema({"type": "roommind/rooms/save", "id": 1, "area_id": "lr", "devices": [device]})["devices"][0]
 
-    assert _validate({"entity_id": "climate.ac", "type": "ac"})["setpoint_offset"] == 0.0
-    assert _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": "1.5"})["setpoint_offset"] == 1.5
-    assert _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": -5})["setpoint_offset"] == -5.0
-    assert _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": -10})["setpoint_offset"] == -10.0
-    assert _validate({"entity_id": "climate.trv", "type": "trv", "setpoint_offset": 8})["setpoint_offset"] == 8.0
-    assert _validate({"entity_id": "climate.trv", "type": "trv", "setpoint_offset": 10})["setpoint_offset"] == 10.0
+    default_ac = _validate({"entity_id": "climate.ac", "type": "ac"})
+    assert default_ac["setpoint_offset_heat"] == 0.0
+    assert default_ac["setpoint_offset_cool"] == 0.0
+    assert "setpoint_offset" not in default_ac
+
+    split_ac = _validate(
+        {"entity_id": "climate.ac", "type": "ac", "setpoint_offset_heat": "3.0", "setpoint_offset_cool": -2}
+    )
+    assert split_ac["setpoint_offset_heat"] == 3.0
+    assert split_ac["setpoint_offset_cool"] == -2.0
+
+    legacy_ac = _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": "1.5"})
+    assert legacy_ac["setpoint_offset_heat"] == 1.5
+    assert legacy_ac["setpoint_offset_cool"] == 1.5
+    assert "setpoint_offset" not in legacy_ac
+
+    legacy_trv = _validate({"entity_id": "climate.trv", "type": "trv", "setpoint_offset": 8})
+    assert legacy_trv["setpoint_offset_heat"] == 8.0
+    assert legacy_trv["setpoint_offset_cool"] == 0.0
+
+    assert (
+        _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset_cool": -10})["setpoint_offset_cool"]
+        == -10.0
+    )
+    assert (
+        _validate({"entity_id": "climate.trv", "type": "trv", "setpoint_offset_heat": 10})["setpoint_offset_heat"]
+        == 10.0
+    )
+
     with pytest.raises(vol.Invalid):
         _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": 10.5})
     with pytest.raises(vol.Invalid):
-        _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset": -10.5})
+        _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset_heat": 10.5})
+    with pytest.raises(vol.Invalid):
+        _validate({"entity_id": "climate.ac", "type": "ac", "setpoint_offset_cool": -10.5})
 
 
 @pytest.mark.asyncio

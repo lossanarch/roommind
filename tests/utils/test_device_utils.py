@@ -31,6 +31,7 @@ from custom_components.roommind.utils.device_utils import (
     is_trv_type,
     legacy_to_devices,
     migrate_heat_pump_devices,
+    migrate_setpoint_offsets,
     room_contributes_to_group,
 )
 
@@ -807,6 +808,93 @@ class TestGetSetpointOffsets:
     def test_device_without_entity_id_skipped(self):
         devices = [{"setpoint_mode": "direct", "setpoint_offset": 1.0}]
         assert get_setpoint_offsets(devices) == {}
+
+    def test_split_heat_and_cool_offsets(self):
+        devices = [
+            {
+                "entity_id": "climate.ac",
+                "type": "ac",
+                "setpoint_mode": "direct",
+                "setpoint_offset_heat": 3.0,
+                "setpoint_offset_cool": -2.0,
+            }
+        ]
+        assert get_setpoint_offset(devices, "climate.ac", "heat") == 3.0
+        assert get_setpoint_offset(devices, "climate.ac", "cool") == -2.0
+        assert get_setpoint_offsets(devices, "heat") == {"climate.ac": 3.0}
+        assert get_setpoint_offsets(devices, "cool") == {"climate.ac": -2.0}
+
+    def test_explicit_zero_does_not_fall_back_to_legacy(self):
+        devices = [
+            {
+                "entity_id": "climate.ac",
+                "type": "ac",
+                "setpoint_mode": "direct",
+                "setpoint_offset": 2.0,
+                "setpoint_offset_heat": 3.0,
+                "setpoint_offset_cool": 0.0,
+            }
+        ]
+        assert get_setpoint_offset(devices, "climate.ac", "heat") == 3.0
+        assert get_setpoint_offset(devices, "climate.ac", "cool") == 0.0
+        assert get_setpoint_offsets(devices, "cool") == {}
+
+    def test_legacy_offset_applies_to_both_modes_when_unmigrated(self):
+        devices = [{"entity_id": "climate.ac", "type": "ac", "setpoint_mode": "direct", "setpoint_offset": -1.5}]
+        assert get_setpoint_offset(devices, "climate.ac", "heat") == -1.5
+        assert get_setpoint_offset(devices, "climate.ac", "cool") == -1.5
+
+
+class TestMigrateSetpointOffsets:
+    def test_auto_ac_copies_to_both_sides(self):
+        devices = [{"entity_id": "climate.ac", "type": "ac", "setpoint_offset": 1.5}]
+        assert migrate_setpoint_offsets(devices, "auto") is True
+        assert devices == [
+            {
+                "entity_id": "climate.ac",
+                "type": "ac",
+                "setpoint_offset_heat": 1.5,
+                "setpoint_offset_cool": 1.5,
+            }
+        ]
+
+    def test_cool_only_ac_migrates_to_cool_only(self):
+        devices = [{"entity_id": "climate.ac", "type": "ac", "setpoint_offset": -2.0}]
+        assert migrate_setpoint_offsets(devices, "cool_only") is True
+        assert devices[0]["setpoint_offset_heat"] == 0.0
+        assert devices[0]["setpoint_offset_cool"] == -2.0
+        assert "setpoint_offset" not in devices[0]
+
+    def test_heat_only_ac_migrates_to_heat_only(self):
+        devices = [{"entity_id": "climate.ac", "type": "ac", "setpoint_offset": 3.0}]
+        assert migrate_setpoint_offsets(devices, "heat_only") is True
+        assert devices[0]["setpoint_offset_heat"] == 3.0
+        assert devices[0]["setpoint_offset_cool"] == 0.0
+
+    def test_trv_migrates_to_heat_only(self):
+        devices = [{"entity_id": "climate.trv", "type": "trv", "setpoint_offset": 8.0}]
+        assert migrate_setpoint_offsets(devices, "auto") is True
+        assert devices[0]["setpoint_offset_heat"] == 8.0
+        assert devices[0]["setpoint_offset_cool"] == 0.0
+
+    def test_none_legacy_migrates_to_zero(self):
+        devices = [{"entity_id": "climate.ac", "type": "ac", "setpoint_offset": None}]
+        assert migrate_setpoint_offsets(devices, "auto") is True
+        assert devices[0]["setpoint_offset_heat"] == 0.0
+        assert devices[0]["setpoint_offset_cool"] == 0.0
+
+    def test_already_migrated_is_noop(self):
+        devices = [
+            {
+                "entity_id": "climate.ac",
+                "type": "ac",
+                "setpoint_offset_heat": 3.0,
+                "setpoint_offset_cool": -2.0,
+            }
+        ]
+        assert migrate_setpoint_offsets(devices, "auto") is False
+        assert devices[0]["setpoint_offset_heat"] == 3.0
+        assert devices[0]["setpoint_offset_cool"] == -2.0
 
 
 def test_valve_trvs_ignore_the_direct_setpoint_mode():

@@ -754,3 +754,50 @@ async def test_migration_override_temp_on_load(store):
     assert "override_temp" not in room
     assert room["override_heat"] == 21.0
     assert room["override_cool"] == 24.0
+
+
+@pytest.mark.asyncio
+async def test_migration_setpoint_offset_on_load(store):
+    """Rooms with legacy device setpoint_offset get migrated to heat/cool and persisted on load."""
+    stored_data = {
+        "rooms": {
+            "living": {
+                "area_id": "living",
+                "climate_mode": "auto",
+                "thermostats": ["climate.trv"],
+                "acs": ["climate.ac"],
+                "devices": [
+                    {"entity_id": "climate.ac", "type": "ac", "setpoint_mode": "direct", "setpoint_offset": 2.0},
+                    {"entity_id": "climate.trv", "type": "trv", "setpoint_mode": "direct", "setpoint_offset": 4.0},
+                ],
+                "schedules": [],
+            },
+            "bedroom": {
+                "area_id": "bedroom",
+                "climate_mode": "cool_only",
+                "thermostats": [],
+                "acs": ["climate.bed_ac"],
+                "devices": [
+                    {"entity_id": "climate.bed_ac", "type": "ac", "setpoint_mode": "direct", "setpoint_offset": -1.5},
+                ],
+                "schedules": [],
+            },
+        }
+    }
+    store._store.async_load = AsyncMock(return_value=stored_data)
+    await store.async_load()
+
+    assert store._store.async_save.called
+
+    living = store.get_room("living")
+    assert "setpoint_offset" not in living["devices"][0]
+    assert living["devices"][0]["setpoint_offset_heat"] == 2.0
+    assert living["devices"][0]["setpoint_offset_cool"] == 2.0
+    assert "setpoint_offset" not in living["devices"][1]
+    assert living["devices"][1]["setpoint_offset_heat"] == 4.0
+    assert living["devices"][1]["setpoint_offset_cool"] == 0.0
+
+    bedroom = store.get_room("bedroom")
+    assert "setpoint_offset" not in bedroom["devices"][0]
+    assert bedroom["devices"][0]["setpoint_offset_heat"] == 0.0
+    assert bedroom["devices"][0]["setpoint_offset_cool"] == -1.5

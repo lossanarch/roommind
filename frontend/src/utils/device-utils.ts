@@ -63,6 +63,25 @@ export function modeFits(
   return mode === "heat_only" ? ability.heat : ability.cool;
 }
 
+/** Direct-mode setpoint offset (°C) of a device for one side, falling back to legacy `setpoint_offset`. */
+export function deviceSetpointOffset(device: DeviceConfig, side: "heat" | "cool"): number {
+  const value = side === "heat" ? device.setpoint_offset_heat : device.setpoint_offset_cool;
+  if (value !== undefined) return value;
+  if (side === "cool" && device.type === "trv") return 0;
+  return device.setpoint_offset ?? 0;
+}
+
+/** Which setpoint offset sides a direct-mode device offers in the UI. */
+export function deviceSetpointOffsetSides(
+  device: DeviceConfig,
+  hass: Pick<HomeAssistant, "states">,
+): { heat: boolean; cool: boolean } {
+  const ability = deviceAbilities([device], hass);
+  const heat = ability.heat || deviceSetpointOffset(device, "heat") !== 0;
+  const cool = device.type === "ac" && (ability.cool || deviceSetpointOffset(device, "cool") !== 0);
+  return { heat, cool };
+}
+
 export interface FanModeOption {
   value: string;
   label: string;

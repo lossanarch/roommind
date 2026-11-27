@@ -135,7 +135,9 @@ export interface DeviceConfig {
   idle_fan_mode?: string; // default "low"
   setback_auto_off?: boolean; // setback ends in off after an hour without demand, default off (#255)
   setpoint_mode?: "proportional" | "direct"; // default "proportional"
-  setpoint_offset?: number; // °C added to the room target in direct mode, default 0
+  setpoint_offset?: number; // legacy single °C offset (migrated to heat/cool)
+  setpoint_offset_heat?: number; // °C added to the heating target in direct mode, default 0
+  setpoint_offset_cool?: number; // °C added to the cooling target in direct mode, default 0
   coil_dry?: "inherit" | "on" | "off"; // default "inherit"
   coil_dry_minutes?: number; // 0 = inherit global
   coil_dry_mode?: "" | "fan_only" | "dry"; // "" = inherit global
